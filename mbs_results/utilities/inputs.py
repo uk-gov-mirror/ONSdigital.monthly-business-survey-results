@@ -18,7 +18,7 @@ def load_config(config_user_dict=None):
     parent_dir = os.path.dirname(mbs_results.__file__)
 
     # Get config paths
-    config_user_path = "config_user.json"
+    config_user_path = "mbs_results/configs/config_user.json"
     config_dev_path = os.path.join(parent_dir, "configs", "config_dev.json")
 
     config = merge_two_config_files(config_user_path, config_dev_path)
