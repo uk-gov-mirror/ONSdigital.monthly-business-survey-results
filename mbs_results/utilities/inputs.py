@@ -1,9 +1,11 @@
 import inspect
 import os
 import re
+import warnings
 from typing import List
 
 import boto3
+import cchardet
 import pandas as pd
 import raz_client
 from rdsa_utils.cdp.helpers.s3_utils import load_csv
@@ -140,6 +142,7 @@ def read_csv_wrapper(
         raz_client.configure_ranger_raz(
             client, ssl_file="/etc/pki/tls/certs/ca-bundle.crt"
         )
+
         df = load_csv(
             client=client, bucket_name=bucket_name, filepath=filepath, **kwargs
         )
@@ -191,6 +194,7 @@ def read_colon_separated_file(
        subset of `column_names`
     """
     usecols = None  # pd.read_csv default load all columns
+    encoding = None  # pd.read_csv default
 
     if keep_columns:
 
@@ -206,6 +210,10 @@ def read_colon_separated_file(
 
     validate_colon_file_columns(filepath, column_names, import_platform, bucket_name)
 
+    # TODO: Extend to get encoding locally too
+    if import_platform == "S3":
+        encoding = get_encoding_from_s3(bucket_name=bucket_name, filepath=filepath)
+
     df = read_csv_wrapper(
         filepath,
         import_platform,
@@ -213,6 +221,7 @@ def read_colon_separated_file(
         sep=":",
         names=column_names,
         usecols=usecols,
+        encoding=encoding,
     )
 
     # Esure the filepath is a string
@@ -243,3 +252,51 @@ def read_colon_separated_file(
         raise ValueError(error_msg)
 
     return df
+
+
+def get_encoding_from_s3(bucket_name: str, filepath: str) -> str:
+    """Gets encoding from file stored in S3 bucket using cchardet package/
+
+
+    Parameters
+    ----------
+    bucket_name : str
+        S3 bucket.
+    filepath : str
+        Full file path in a S3 bucket.
+
+    Raises
+    ------
+    ValueError
+        If no encoding is generated.
+
+    Returns
+    -------
+    str
+        Encoding.
+
+    """
+
+    client = boto3.client("s3")
+
+    raz_client.configure_ranger_raz(client, ssl_file="/etc/pki/tls/certs/ca-bundle.crt")
+
+    response = client.get_object(Bucket=bucket_name, Key=filepath)
+
+    response_body = response["Body"].read()
+    detection = cchardet.detect(response_body)
+
+    encoding = detection["encoding"]
+    confidence = detection["encoding"]
+
+    if not encoding:
+        raise ValueError(f"Could not detect encoding for {filepath}")
+
+    if confidence < 1.0:
+        warnings.warn(
+            f"""
+        Confidence level for file {filepath}
+    and encoding {encoding} is {confidence}"""
+        )
+
+    return encoding
